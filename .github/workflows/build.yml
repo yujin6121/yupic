@@ -97,6 +97,7 @@ jobs:
     runs-on: windows-latest
     env:
       VCPKG_ROOT: C:\vcpkg
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg-triplet }}-static-md
     steps:
       - uses: actions/checkout@v4
 
@@ -121,17 +122,16 @@ jobs:
 
           $env:VCPKG_ROOT = 'C:\vcpkg'
           $triplet = '${{ matrix.vcpkg-triplet }}'
+          $static = "$triplet-static-md"
 
-          # Try installing using the exact triplet; if that fails, try a common static-md variant
-          try {
-            C:\vcpkg\vcpkg install libheif --triplet $triplet
-          } catch {
-            Write-Host "Primary triplet install failed, trying '${triplet}-static-md'"
-            C:\vcpkg\vcpkg install libheif --triplet "${triplet}-static-md"
-          }
+          Write-Host "Installing libheif for $static"
+          C:\vcpkg\vcpkg install libheif --triplet $static
+
+          Write-Host "Also installing shared variant for completeness"
+          C:\vcpkg\vcpkg install libheif --triplet $triplet
 
           C:\vcpkg\vcpkg integrate install
-          Write-Host "VCPKG_ROOT set to $env:VCPKG_ROOT"
+          Write-Host "VCPKG_ROOT set to $env:VCPKG_ROOT; default triplet $env:VCPKG_DEFAULT_TRIPLET"
 
       - name: Install frontend dependencies
         run: npm install
