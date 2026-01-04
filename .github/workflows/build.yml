@@ -150,7 +150,7 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis/
-          if-no-files-found: ignor
+          if-no-files-found: ignore
   release:
     needs: [build-macos-arm64, build-macos-x64, build-windows]
     runs-on: ubuntu-latest
