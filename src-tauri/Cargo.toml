@@ -1,0 +1,43 @@
+[package]
+name = "yupic"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+[features]
+# Enable only HEIF by default. JXL/RAW can be enabled with --features jxl,raw.
+default = ["heif", "raw"]
+# Enable HEIC/HEIF via libheif (requires system libheif/HEVC)
+heif = ["libheif-rs"]
+# Enable JPEG XL decoding
+jxl = ["jxl-oxide"]
+# Enable RAW decoding (CR2/NEF/RAF/etc.)
+raw = ["rawloader"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "yupic_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "ico", "pnm", "tga", "tiff", "webp", "dds", "qoi", "avif"] }
+base64 = "0.22"
+libheif-rs = { version = "0.20", optional = true }
+jxl-oxide = { version = "0.9", optional = true }
+rawloader = { version = "0.37", optional = true }
+exif = { package = "kamadak-exif", version = "0.6" }
+rayon = "1.10"
+
