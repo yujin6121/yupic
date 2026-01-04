@@ -110,10 +110,28 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install libheif via vcpkg
+      - name: Install vcpkg and libheif
+        shell: pwsh
         run: |
-          vcpkg install libheif:${{ matrix.vcpkg-triplet }}
-          vcpkg integrate install
+          # Clone and bootstrap vcpkg
+          if (-not (Test-Path -Path 'C:\vcpkg')) {
+            git clone https://github.com/microsoft/vcpkg C:\vcpkg
+            C:\vcpkg\bootstrap-vcpkg.bat
+          }
+
+          $env:VCPKG_ROOT = 'C:\vcpkg'
+          $triplet = '${{ matrix.vcpkg-triplet }}'
+
+          # Try installing using the exact triplet; if that fails, try a common static-md variant
+          try {
+            C:\vcpkg\vcpkg install libheif --triplet $triplet
+          } catch {
+            Write-Host "Primary triplet install failed, trying '${triplet}-static-md'"
+            C:\vcpkg\vcpkg install libheif --triplet "${triplet}-static-md"
+          }
+
+          C:\vcpkg\vcpkg integrate install
+          Write-Host "VCPKG_ROOT set to $env:VCPKG_ROOT"
 
       - name: Install frontend dependencies
         run: npm install
