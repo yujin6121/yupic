@@ -1,5 +1,7 @@
 # yupic
 
+[English](README_EN.md) | **한국어**
+
 가볍고 빠른 크로스 플랫폼 이미지 뷰어
 
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue)
@@ -35,7 +37,7 @@ yupic은 Tauri + React + Rust로 구축된 고성능 이미지 뷰어입니다. 
 
 ### 릴리스 다운로드
 
-[Releases](https://github.com/yourusername/yupic/releases) 페이지에서 최신 버전을 다운로드하세요:
+[Releases](https://github.com/yujin6121/yupic/releases) 페이지에서 최신 버전을 다운로드하세요:
 
 - **macOS**: `.dmg` 파일
 - **Windows**: `.msi` 또는 `.exe` 설치 파일
