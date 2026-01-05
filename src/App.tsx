@@ -578,6 +578,8 @@ function App() {
             "rw2",
             "pef",
             "sr2",
+            "arw",
+            "raw",
             "raf",
             "avif",
             "jxl",

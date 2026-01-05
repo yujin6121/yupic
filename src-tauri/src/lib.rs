@@ -59,7 +59,7 @@ fn get_directory_images(path: &str) -> Result<DirectoryImages, String> {
         "bmp", "jpg", "jpeg", "gif", "png", "psd", "dds", "jxr", "webp",
         "j2k", "jp2", "tga", "tiff", "tif", "pcx", "pgm", "pnm", "ppm",
         "bpg", "dng", "cr2", "crw", "nef", "nrw", "orf", "rw2", "pef",
-        "sr2", "raf", "avif", "jxl", "exr", "qoi", "ico", "svg", "heic",
+        "sr2", "arw", "raw", "raf", "avif", "jxl", "exr", "qoi", "ico", "svg", "heic",
         "heif",
     ];
     
@@ -146,7 +146,7 @@ async fn open_image(path: String, max_size: Option<u32>) -> Result<ImageResponse
                     return Err("JXL 지원을 빌드 옵션 jxl로 활성화하세요".into());
                 }
             }
-            "dng" | "cr2" | "crw" | "nef" | "nrw" | "orf" | "rw2" | "pef" | "sr2" | "raf" => {
+            "dng" | "cr2" | "crw" | "nef" | "nrw" | "orf" | "rw2" | "pef" | "sr2" | "arw" | "raw" | "raf" => {
                 #[cfg(feature = "raw")]
                 {
                     decode_raw(&path_buf, max_size)?
