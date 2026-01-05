@@ -1,8 +1,9 @@
 import type { PointerEvent, WheelEvent } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import "./App.css";
 
 type Frame = {
@@ -80,6 +81,14 @@ const TRANSLATIONS = {
     flipH: "좌우 반전",
     flipV: "상하 반전",
     fullscreen: "전체 화면",
+    version: "버전",
+    checkUpdates: "업데이트 확인",
+    checking: "업데이트 확인 중...",
+    upToDate: "최신 버전입니다",
+    updateAvailable: "업데이트 이용 가능",
+    download: "다운로드",
+    releaseNotes: "릴리스 노트",
+    updateError: "업데이트 확인 중 오류가 발생했습니다",
   },
   en: {
     open: "Open Image",
@@ -111,6 +120,14 @@ const TRANSLATIONS = {
     flipH: "Flip Horizontal",
     flipV: "Flip Vertical",
     fullscreen: "Fullscreen",
+    version: "Version",
+    checkUpdates: "Check for updates",
+    checking: "Checking for updates...",
+    upToDate: "Up to date",
+    updateAvailable: "Update available",
+    download: "Download",
+    releaseNotes: "Release notes",
+    updateError: "Failed to check updates",
   },
 };
 
@@ -206,6 +223,117 @@ function App() {
   const [isInteracting, setIsInteracting] = useState(false);
   const [showHeader, setShowHeader] = useState(true);
   const [showFullMeta, setShowFullMeta] = useState(false);
+
+  // Updater state
+  const [appVersionStr, setAppVersionStr] = useState<string>("?");
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateStatusText, setUpdateStatusText] = useState<string>("");
+  const [latestRelease, setLatestRelease] = useState<{
+    tag: string;
+    url?: string;
+    notes?: string;
+    html_url?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    getVersion()
+      .then(v => setAppVersionStr(v))
+      .catch(() => setAppVersionStr("?"));
+  }, []);
+
+  function compareVersions(a: string, b: string) {
+    const na = (a || '').toString().replace(/^v/, "");
+    const nb = (b || '').toString().replace(/^v/, "");
+    const pa = na.split('.').map(s => parseInt(s, 10) || 0);
+    const pb = nb.split('.').map(s => parseInt(s, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const va = pa[i] || 0;
+      const vb = pb[i] || 0;
+      if (va > vb) return 1;
+      if (va < vb) return -1;
+    }
+    return 0;
+  }
+
+  const checkForUpdates = useCallback(async () => {
+    setCheckingUpdate(true);
+    setUpdateStatusText(t.checking);
+    setLatestRelease(null);
+
+    try {
+      const resp = await fetch('https://api.github.com/repos/yujin6121/yupic/releases/latest');
+      if (!resp.ok) throw new Error('release fetch failed');
+      const rel = await resp.json();
+      const tag = rel.tag_name || rel.name || '';
+      const body = rel.body || '';
+      const assets = rel.assets || [];
+
+      // Determine platform and desired asset extension
+      const platform = navigator.platform || '';
+      let wantedExts: string[] = [];
+      if (/Mac|iPhone|iPad|Darwin/.test(platform)) {
+        wantedExts = ['dmg', 'pkg'];
+      } else if (/Win/.test(platform)) {
+        wantedExts = ['msi', 'exe', 'zip', 'nsis'];
+      } else {
+        wantedExts = ['AppImage', 'deb', 'tar.gz', 'zip'];
+      }
+
+      let downloadUrl: string | undefined;
+      for (const a of assets) {
+        const name: string = a.name || '';
+        for (const ext of wantedExts) {
+          if (name.toLowerCase().endsWith(ext.toLowerCase())) {
+            downloadUrl = a.browser_download_url;
+            break;
+          }
+        }
+        if (downloadUrl) break;
+      }
+
+      // Fall back to html_url of release
+      const htmlUrl = rel.html_url;
+
+      setLatestRelease({ tag, url: downloadUrl, notes: body, html_url: htmlUrl });
+
+      const cmp = compareVersions(appVersionStr, tag || '');
+      if (!tag) {
+        setUpdateStatusText(t.updateError);
+      } else if (cmp < 0) {
+        setUpdateStatusText(`${t.updateAvailable}: ${tag}`);
+      } else {
+        setUpdateStatusText(t.upToDate);
+      }
+    } catch (e) {
+      console.warn('update check failed', e);
+      setUpdateStatusText(t.updateError);
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }, [appVersionStr, t.checking, t.updateAvailable, t.updateError, t.upToDate]);
+
+  async function openUrl(url: string) {
+    try {
+      const modName = '@tauri-apps/api/shell';
+      // Prevent Vite from trying to statically analyze this import
+      // @ts-ignore
+      const mod = await import(/* @vite-ignore */ (modName as any));
+      if (mod) {
+        const maybeOpen = (mod && (mod.open || mod.default?.open || mod.default)) as any;
+        if (typeof maybeOpen === 'function') {
+          maybeOpen(url);
+          return;
+        }
+      }
+    } catch (e) {
+      // dynamic import failed, fall back to window.open
+      console.warn('shell import failed, falling back to window.open', e);
+    }
+
+    try {
+      window.open(url, '_blank', 'noopener');
+    } catch { }
+  }
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -545,7 +673,7 @@ function App() {
   }, [settings.maxResolution, loadImage, releaseImage]);
 
   const handlePick = useCallback(async () => {
-    const selected = await open({
+    const selected = await openDialog({
       multiple: false,
       filters: [
         {
@@ -1131,6 +1259,30 @@ function App() {
               >
                 {t.off}
               </button>
+            </div>
+          </div>
+
+          <div className="settings-group">
+            <label>{t.version}</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexDirection: 'column' }}>
+              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div><strong>{appVersionStr}</strong></div>
+                <button onClick={checkForUpdates} disabled={checkingUpdate} style={{ whiteSpace: 'nowrap' }}>{checkingUpdate ? t.checking : t.checkUpdates}</button>
+              </div>
+              <div style={{ width: '100%', marginTop: 8 }}>
+                {updateStatusText && <div style={{ fontSize: 13 }}>{updateStatusText}</div>}
+                {latestRelease && latestRelease.url && (
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                    <button onClick={() => openUrl(latestRelease.url!)}>{t.download}</button>
+                    {latestRelease.html_url && <button onClick={() => openUrl(latestRelease.html_url!)}>{t.releaseNotes}</button>}
+                  </div>
+                )}
+                {latestRelease && !latestRelease.url && latestRelease.html_url && (
+                  <div style={{ marginTop: 8 }}>
+                    <button onClick={() => openUrl(latestRelease.html_url!)}>{t.releaseNotes}</button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
