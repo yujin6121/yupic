@@ -49,6 +49,8 @@ body {
   overflow: hidden;
   background: var(--bg-main);
   color: var(--text-main);
+  /* Tell the browser we support dark and light form controls so native dropdowns use matching colors */
+  color-scheme: dark light;
 }
 
 .shell {
@@ -267,6 +269,14 @@ button:disabled {
   border-radius: 8px;
   font-size: 13px;
   outline: none;
+  /* Ensure native dropdown text is readable on Windows dark theme */
+  -webkit-text-fill-color: var(--text-main);
+}
+
+/* Style the dropdown options explicitly so they aren't white-on-white in some native themes */
+.settings-group select option {
+  background: var(--bg-sidebar);
+  color: var(--text-main);
 }
 
 .lang-toggle {
