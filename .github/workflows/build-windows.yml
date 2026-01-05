@@ -1,0 +1,111 @@
+name: Build yupic (Windows)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            name: Windows-x64
+            vcpkg-triplet: x64-windows
+          - target: i686-pc-windows-msvc
+            name: Windows-x86
+            vcpkg-triplet: x86-windows
+          - target: aarch64-pc-windows-msvc
+            name: Windows-arm64
+            vcpkg-triplet: arm64-windows
+
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: C:\\vcpkg
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg-triplet }}-static-md
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install vcpkg and libheif
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -Path 'C:\vcpkg')) {
+            git clone https://github.com/microsoft/vcpkg C:\vcpkg
+            C:\vcpkg\bootstrap-vcpkg.bat
+          }
+
+          $env:VCPKG_ROOT = 'C:\vcpkg'
+          $triplet = '${{ matrix.vcpkg-triplet }}'
+          $static = "$triplet-static-md"
+
+          Write-Host "Installing libheif for $static"
+          C:\vcpkg\vcpkg install libheif --triplet $static
+          C:\vcpkg\vcpkg integrate install
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VCPKG_ROOT: C:\vcpkg
+        with:
+          args: --target ${{ matrix.target }}
+
+      - name: List build bundles
+        run: |
+          echo "Listing windows bundles for target: ${{ matrix.target }}"
+          dir src-tauri\target\${{ matrix.target }}\release\bundle || true
+
+      - name: Generate SHA512 checksums for Windows artifacts
+        if: always()
+        shell: pwsh
+        run: |
+          $p = "src-tauri\target\${{ matrix.target }}\release\bundle"
+          if (Test-Path $p) {
+            Get-ChildItem -Path $p -Recurse -File -Include *.msi,*.exe,*.zip | ForEach-Object {
+              $hash = Get-FileHash -Algorithm SHA512 -Path $_.FullName
+              "$($hash.Hash)  $($_.FullName)" | Out-File -FilePath ($_.FullName + ".sha512") -Encoding ascii
+              Write-Host "Created: $($_.FullName).sha512"
+            }
+          } else { Write-Host "No bundle dir at $p" }
+
+      - name: Create or update Release (Windows assets)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/**/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/**
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sha512
+          draft: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: yupic-${{ matrix.name }}-windows
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/msi/**/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/**
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sha512
+          if-no-files-found: ignore

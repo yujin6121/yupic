@@ -1,10 +1,13 @@
-name: Build yupic
+name: Build yupic (macOS)
 
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-macos:
@@ -48,7 +51,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vcpkg
-          key: ${{ runner.os }}-vcpkg-${{ matrix.settings.vcpkg-triplet }}-${{ hashFiles('.github/workflows/build.yml') }}
+          key: ${{ runner.os }}-vcpkg-${{ matrix.settings.vcpkg-triplet }}-${{ hashFiles('.github/workflows/build-macos.yml') }}
 
       - name: Install vcpkg and libheif
         run: |
@@ -56,13 +59,12 @@ jobs:
             git clone https://github.com/microsoft/vcpkg.git
             ./vcpkg/bootstrap-vcpkg.sh
           fi
-          
+
           VCPKG_ROOT=$(pwd)/vcpkg
           echo "VCPKG_ROOT=$VCPKG_ROOT" >> $GITHUB_ENV
-          
+
           if [ "${{ matrix.settings.vcpkg-triplet }}" == "universal" ]; then
             $VCPKG_ROOT/vcpkg install libheif:arm64-osx libheif:x64-osx
-            # Universal 빌드 시 아키텍처별 pkg-config 경로 설정
             echo "PKG_CONFIG_PATH_aarch64_apple_darwin=$VCPKG_ROOT/installed/arm64-osx/lib/pkgconfig" >> $GITHUB_ENV
             echo "PKG_CONFIG_PATH_x86_64_apple_darwin=$VCPKG_ROOT/installed/x64-osx/lib/pkgconfig" >> $GITHUB_ENV
           else
@@ -104,87 +106,23 @@ jobs:
             echo "No dmg directory at $dmgdir"
           fi
 
+      - name: Create or update Release (macOS assets)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            src-tauri/target/${{ matrix.settings.target }}/release/bundle/dmg/**/*.dmg
+            src-tauri/target/${{ matrix.settings.target }}/release/bundle/dmg/**/*.sha512
+          draft: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: yupic-${{ matrix.settings.name }}
+          name: yupic-${{ matrix.settings.name }}-macos
           path: |
             src-tauri/target/${{ matrix.settings.target }}/release/bundle/dmg/
             src-tauri/target/${{ matrix.settings.target }}/release/bundle/dmg/*.sha512
           if-no-files-found: ignore
-
-  build-windows:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-pc-windows-msvc
-            name: Windows-x64
-            vcpkg-triplet: x64-windows
-          - target: i686-pc-windows-msvc
-            name: Windows-x86
-            vcpkg-triplet: x86-windows
-          - target: aarch64-pc-windows-msvc
-            name: Windows-arm64
-            vcpkg-triplet: arm64-windows
-
-    runs-on: windows-latest
-    env:
-      VCPKG_ROOT: C:\vcpkg
-      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg-triplet }}-static-md
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install vcpkg and libheif
-        shell: pwsh
-        run: |
-          if (-not (Test-Path -Path 'C:\vcpkg')) {
-            git clone https://github.com/microsoft/vcpkg C:\vcpkg
-            C:\vcpkg\bootstrap-vcpkg.bat
-          }
-
-          $env:VCPKG_ROOT = 'C:\vcpkg'
-          $triplet = '${{ matrix.vcpkg-triplet }}'
-          $static = "$triplet-static-md"
-
-          Write-Host "Installing libheif for $static"
-          C:\vcpkg\vcpkg install libheif --triplet $static
-          C:\vcpkg\vcpkg integrate install
-
-      - name: Install frontend dependencies
-        run: npm install
-
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VCPKG_ROOT: C:\vcpkg
-        with:
-          args: --target ${{ matrix.target }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: yupic-${{ matrix.name }}
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
-            src-tauri/target/${{ matrix.target }}/release/bundle/nsis
-            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/
-          if-no-files-found: ignore
-
-  release:
-    runs-on: ubuntu-latest
-    steps:
-      - run: |
-          echo "Release aggregation moved to per-platform workflows: build-macos.yml and build-windows.yml"
-          echo "If you need a central release workflow, we can implement a release orchestrator that collects artifacts from separate runs."
