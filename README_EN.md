@@ -42,6 +42,19 @@ Download the latest version from the [Releases](https://github.com/yujin6121/yup
 - **macOS**: `.dmg` file
 - **Windows**: `.msi` or `.exe` installer
 
+## Troubleshooting
+
+### macOS: "App is damaged and can't be opened"
+
+Apps not signed with an Apple Developer certificate may be blocked by macOS Gatekeeper. You can resolve this by running the following command in the terminal:
+
+1. Move the app to the **Applications** folder.
+2. Open Terminal.app and enter the following command:
+   ```bash
+   sudo xattr -cr /Applications/yupic.app
+   ```
+3. Launch the app again.
+
 ### Build from Source
 
 See [BUILD.md](BUILD.md) for build instructions.

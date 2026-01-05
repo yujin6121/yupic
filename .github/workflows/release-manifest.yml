@@ -1,0 +1,120 @@
+name: Release manifest
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-manifest:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Prepare variables
+        run: |
+          set -euo pipefail
+          echo "TAG=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
+          echo "RELEASE_ID=$(jq -r '.release.id' < $GITHUB_EVENT_PATH)" >> $GITHUB_ENV
+          echo "UPLOAD_URL=$(jq -r '.release.upload_url' < $GITHUB_EVENT_PATH | sed -e 's/{?name,label}//')" >> $GITHUB_ENV
+          echo "RELEASE_BODY=$(jq -r '.release.body' < $GITHUB_EVENT_PATH)" >> $GITHUB_ENV
+          echo "RELEASE_PUBLISHED_AT=$(jq -r '.release.published_at' < $GITHUB_EVENT_PATH)" >> $GITHUB_ENV
+
+      - name: Download release asset list
+        run: |
+          set -euo pipefail
+          echo "Listing assets for release $RELEASE_ID"
+          curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" -o assets.json
+          jq -c '.[] | {id: .id, name: .name, url: .browser_download_url, size: .size}' assets.json > assets-compact.json
+          echo "Assets summary:" && cat assets-compact.json || true
+
+      - name: Download .sha512 files (if any) and build hash map
+        run: |
+          set -euo pipefail
+          echo "Building sha map"
+          mkdir -p tmp_assets
+          declare -A sha_map
+          jq -c '.[]' assets-compact.json | while read -r a; do
+            name=$(jq -r '.name' <<< "$a")
+            url=$(jq -r '.url' <<< "$a")
+            if [[ "$name" == *.sha512 ]]; then
+              echo "Found sha file: $name"
+              curl -sL -H "Authorization: token $GITHUB_TOKEN" -o "tmp_assets/$name" "$url"
+              # parse 'HASH  filename' or just HASH
+              read -r hash rest < <(awk '{print $1, $2}' "tmp_assets/$name")
+              # strip any leading './' or path
+              filename=$(basename "$rest")
+              if [[ -z "$rest" ]]; then
+                # if rest empty, infer name (e.g., name.endsWith('.dmg.sha512'))
+                filename="${name%.sha512}"
+              fi
+              echo "Mapping $filename -> $hash"
+              # store to small file map
+              echo "$hash" > "tmp_assets/$filename.sha512.value"
+            fi
+          done
+
+      - name: Compute/collect checksums for each asset and build manifest
+        run: |
+          set -euo pipefail
+          echo "Building manifest JSON"
+          jq -n '{version: env.TAG, published_at: env.RELEASE_PUBLISHED_AT, notes: env.RELEASE_BODY, assets: []}' > manifest.json
+
+          jq -c '.[]' assets-compact.json | while read -r a; do
+            name=$(jq -r '.name' <<< "$a")
+            url=$(jq -r '.url' <<< "$a")
+            size=$(jq -r '.size' <<< "$a")
+
+            if [[ "$name" == *.sha512 ]]; then
+              echo "Skipping sha512 asset entry: $name"
+              continue
+            fi
+
+            shafile="tmp_assets/$name.sha512.value"
+            if [[ -f "$shafile" ]]; then
+              sha=$(cat "$shafile")
+            else
+              # download asset to compute
+              echo "Downloading $name to compute sha512 (size: $size)"
+              curl -sL -H "Authorization: token $GITHUB_TOKEN" -o "tmp_assets/$name" "$url"
+              sha=$(shasum -a 512 "tmp_assets/$name" | awk '{print $1}')
+            fi
+
+            # append asset entry to manifest
+            jq --arg name "$name" --arg url "$url" --arg sha "$sha" --arg size "$size" '.assets += [{name: $name, url: $url, sha512: $sha, size: ($size | tonumber)}]' manifest.json > manifest.tmp.json && mv manifest.tmp.json manifest.json
+          done
+
+          echo "Final manifest:"
+          cat manifest.json
+
+      - name: Remove old latest.json asset if exists
+        run: |
+          set -euo pipefail
+          existing=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" | jq -r '.[] | select(.name=="latest.json") | .id') || true
+          if [[ -n "$existing" && "$existing" != "null" ]]; then
+            echo "Deleting existing latest.json asset id: $existing"
+            curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/${{ github.repository }}/releases/assets/$existing"
+          else
+            echo "No existing latest.json asset"
+          fi
+
+      - name: Upload latest.json to release
+        run: |
+          set -euo pipefail
+          curl -s -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" --data-binary @manifest.json "${UPLOAD_URL}?name=latest.json" > upload_result.json
+          echo "Upload result:" && cat upload_result.json
+
+      - name: Output manifest
+        run: |
+          echo "manifest.json contents:" && cat manifest.json
+          echo "::set-output name=manifest::$(jq -c . manifest.json)"

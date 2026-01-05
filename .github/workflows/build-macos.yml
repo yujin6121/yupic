@@ -62,6 +62,9 @@ jobs:
 
           VCPKG_ROOT=$(pwd)/vcpkg
           echo "VCPKG_ROOT=$VCPKG_ROOT" >> $GITHUB_ENV
+          
+          # Force static linkage for dependencies to avoid missing dylib errors
+          echo "VCPKG_LIBRARY_LINKAGE=static" >> $GITHUB_ENV
 
           if [ "${{ matrix.settings.vcpkg-triplet }}" == "universal" ]; then
             $VCPKG_ROOT/vcpkg install libheif:arm64-osx libheif:x64-osx
@@ -81,6 +84,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: --target ${{ matrix.settings.target }}
+
+      - name: Ad-hoc sign the app bundle
+        run: |
+          echo "Performing ad-hoc signing for ${{ matrix.settings.target }}"
+          app_path="src-tauri/target/${{ matrix.settings.target }}/release/bundle/macos/yupic.app"
+          if [ -d "$app_path" ]; then
+            find "$app_path" -name "*.dylib" -or -name "*.so" | xargs codesign --force --deep --sign -
+            codesign --force --deep --sign - "$app_path"
+          else
+            echo "App bundle not found at $app_path"
+          fi
 
       - name: List build bundles
         run: |

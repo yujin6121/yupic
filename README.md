@@ -42,6 +42,19 @@ yupic은 Tauri + React + Rust로 구축된 고성능 이미지 뷰어입니다. 
 - **macOS**: `.dmg` 파일
 - **Windows**: `.msi` 또는 `.exe` 설치 파일
 
+## 문제 해결 (Troubleshooting)
+
+### macOS에서 "앱이 손상되어 열 수 없습니다" 오류 발생 시
+
+Apple 개발자 인증서로 서명되지 않은 앱의 경우 macOS Gatekeeper에 의해 차단될 수 있습니다. 이 경우 터미널에서 다음 명령어를 실행하여 해결할 수 있습니다:
+
+1. 앱을 **응용 프로그램(Applications)** 폴더로 이동합니다.
+2. 터미널(Terminal.app)을 열고 다음 명령어를 입력합니다:
+   ```bash
+   sudo xattr -cr /Applications/yupic.app
+   ```
+3. 앱을 다시 실행합니다.
+
 ## 단축키
 
 | 키 | 동작 |
