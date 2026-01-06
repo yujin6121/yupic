@@ -118,54 +118,74 @@ jobs:
             arch_label="${arch_label%-apple-darwin}"
             dmg_name="yupic_${APP_VERSION}_${arch_label}.dmg"
             out_dmg="$dmg_dir/$dmg_name"
+            temp_dmg="$dmg_dir/.temp.dmg"
 
+            # Create temporary DMG
             staging_dir=$(mktemp -d)
             contents_dir="$staging_dir/yupic"
             mkdir -p "$contents_dir"
             cp -R "$app_path" "$contents_dir/"
             ln -s /Applications "$contents_dir/Applications"
 
-            echo "Creating new DMG: $out_dmg"
-            temp_dmg="$dmg_dir/.temp_yupic.dmg"
-            hdiutil create -volname "yupic" -srcfolder "$contents_dir" -ov -format UDRW -size 300m "$temp_dmg"
-            
-            # Mount the DMG to customize it
-            mount_dir=$(mktemp -d)
-            hdiutil attach "$temp_dmg" -mountpoint "$mount_dir" -nobrowse
-            
-            # Set icon view and window properties using AppleScript
-            sleep 2
-            osascript <<EOF
-tell application "Finder"
-  set the view of the front Finder window to icon view
-  set properties of the front Finder window to {bounds:{100, 100, 620, 540}, toolbar visible:false, statusbar visible:false, sidebar width:0}
-  set icon size of the front Finder window to 64
-  set arrangement of the front Finder window to not arranged
-end tell
+            echo "Creating temporary DMG for layout customization..."
+            hdiutil create -volname "yupic" -srcfolder "$contents_dir" -ov -format UDRO -quiet "$temp_dmg"
+
+            # Mount the DMG
+            mount_output=$(hdiutil attach "$temp_dmg" -readwrite -noautoopen -quiet)
+            dev_node=$(echo "$mount_output" | awk '{print $1; exit}')
+            mount_point=$(echo "$mount_output" | grep -o '/Volumes.*$')
+
+            if [ -z "$mount_point" ]; then
+              mount_point=$(echo "$mount_output" | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}' | xargs)
+            fi
+
+            if [ -d "$mount_point" ]; then
+              echo "DMG mounted at: $mount_point"
+
+              # Create a simple background color (optional: use a 1x1 pixel image for speed)
+              # We'll skip the background image for faster builds - just set nice window properties
+
+              # Use AppleScript to customize DMG appearance
+              osascript <<EOF
+                tell application "Finder"
+                  activate
+                  delay 0.5
+                  tell disk "yupic"
+                    open
+                    delay 0.5
+                    set current view of container window to icon view
+                    set toolbar visible of container window to false
+                    set statusbar visible of container window to false
+                    set the bounds of container window to {100, 100, 680, 620}
+                    set arrangement of icon view of container window to arranged by name
+                    set icon size of icon view of container window to 96
+                    
+                    set position of item "yupic.app" of container window to {180, 220}
+                    set position of item "Applications" of container window to {420, 220}
+                    
+                    close container window
+                    eject disk "yupic"
+                  end tell
+                end tell
+                delay 1
 EOF
-            
-            # Position icons nicely
-            sleep 1
-            osascript <<EOF
-tell application "Finder"
-  set theFolder to POSIX file "$mount_dir" as alias
-  tell window 1
-    set bounds to {100, 100, 620, 540}
-    set position of item "yupic.app" to {110, 150}
-    set position of item "Applications" to {370, 150}
-  end tell
-end tell
-EOF
-            
-            sleep 1
-            hdiutil detach "$mount_dir" -quiet
-            rm -rf "$mount_dir"
-            
-            # Compress the DMG
-            hdiutil convert "$temp_dmg" -format UDZO -o "$out_dmg"
-            rm -f "$temp_dmg"
-            rm -rf "$staging_dir"
-            echo "DMG creation complete."
+
+              # Wait for unmount to complete
+              sleep 2
+
+              # Convert to compressed format
+              echo "Finalizing DMG: $out_dmg"
+              hdiutil convert "$temp_dmg" -format UDZO -o "$out_dmg" -quiet
+              rm -f "$temp_dmg"
+
+              rm -rf "$staging_dir"
+              echo "DMG creation complete: $dmg_name"
+            else
+              echo "Failed to mount DMG at expected location"
+              hdiutil detach "$dev_node" -quiet 2>/dev/null || true
+              rm -f "$temp_dmg"
+              exit 1
+            fi
           else
             echo "App bundle not found at $app_path"
             exit 1
