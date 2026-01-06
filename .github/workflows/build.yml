@@ -76,6 +76,15 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Detect app version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [[ "${GITHUB_REF_NAME}" == v* ]]; then
+            APP_VERSION="${GITHUB_REF_NAME#v}"
+          else
+            APP_VERSION=$(node -e "const tauri=require('./src-tauri/tauri.conf.json'); const pkg=require('./package.json'); const ver=(tauri?.package?.version)||pkg.version||'0.0.0'; console.log(ver);")
+          fi
+          echo "APP_VERSION=$APP_VERSION" >> $GITHUB_ENV
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -105,11 +114,20 @@ jobs:
                 mkdir -p "$dmg_dir"
             fi
 
-            dmg_name="yupic_${{ matrix.settings.target }}.dmg"
+            arch_label="${{ matrix.settings.target }}"
+            arch_label="${arch_label%-apple-darwin}"
+            dmg_name="yupic_${APP_VERSION}_${arch_label}.dmg"
             out_dmg="$dmg_dir/$dmg_name"
-            
+
+            staging_dir=$(mktemp -d)
+            contents_dir="$staging_dir/yupic"
+            mkdir -p "$contents_dir"
+            cp -R "$app_path" "$contents_dir/"
+            ln -s /Applications "$contents_dir/Applications"
+
             echo "Creating new DMG: $out_dmg"
-            hdiutil create -volname "yupic" -srcfolder "$app_path" -ov -format UDZO "$out_dmg"
+            hdiutil create -volname "yupic" -srcfolder "$contents_dir" -ov -format UDZO "$out_dmg"
+            rm -rf "$staging_dir"
             echo "DMG creation complete."
           else
             echo "App bundle not found at $app_path"
@@ -130,18 +148,17 @@ jobs:
         include:
           - target: x86_64-pc-windows-msvc
             name: Windows-x64
-            vcpkg-triplet: x64-windows
+            vcpkg_triplet: x64-windows
           - target: i686-pc-windows-msvc
             name: Windows-x86
-            vcpkg-triplet: x86-windows
+            vcpkg_triplet: x86-windows
           - target: aarch64-pc-windows-msvc
             name: Windows-arm64
-            vcpkg-triplet: arm64-windows
+            vcpkg_triplet: arm64-windows
 
     runs-on: windows-latest
     env:
-      VCPKG_ROOT: C:\vcpkg
-      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg-triplet }}-static-md
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}-static-md
     steps:
       - uses: actions/checkout@v4
 
@@ -158,18 +175,20 @@ jobs:
       - name: Install vcpkg and libheif
         shell: pwsh
         run: |
-          if (-not (Test-Path -Path 'C:\vcpkg')) {
-            git clone https://github.com/microsoft/vcpkg C:\vcpkg
-            C:\vcpkg\bootstrap-vcpkg.bat
+          if (-not (Test-Path -Path 'vcpkg')) {
+            git clone https://github.com/microsoft/vcpkg vcpkg
+            .\vcpkg\bootstrap-vcpkg.bat
           }
 
-          $env:VCPKG_ROOT = 'C:\vcpkg'
-          $triplet = '${{ matrix.vcpkg-triplet }}'
+          $vcpkgRoot = (Resolve-Path "vcpkg").Path
+          echo "VCPKG_ROOT=$vcpkgRoot" >> $env:GITHUB_ENV
+
+          $triplet = '${{ matrix.vcpkg_triplet }}'
           $static = "$triplet-static-md"
 
           Write-Host "Installing libheif for $static"
-          C:\vcpkg\vcpkg install libheif --triplet $static
-          C:\vcpkg\vcpkg integrate install
+          .\vcpkg\vcpkg install libheif --triplet $static
+          .\vcpkg\vcpkg integrate install
 
       - name: Install frontend dependencies
         run: npm install
@@ -178,7 +197,6 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VCPKG_ROOT: C:\vcpkg
         with:
           args: --target ${{ matrix.target }}
 
