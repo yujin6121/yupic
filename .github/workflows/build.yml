@@ -126,7 +126,44 @@ jobs:
             ln -s /Applications "$contents_dir/Applications"
 
             echo "Creating new DMG: $out_dmg"
-            hdiutil create -volname "yupic" -srcfolder "$contents_dir" -ov -format UDZO "$out_dmg"
+            temp_dmg="$dmg_dir/.temp_yupic.dmg"
+            hdiutil create -volname "yupic" -srcfolder "$contents_dir" -ov -format UDRW -size 300m "$temp_dmg"
+            
+            # Mount the DMG to customize it
+            mount_dir=$(mktemp -d)
+            hdiutil attach "$temp_dmg" -mountpoint "$mount_dir" -nobrowse
+            
+            # Set icon view and window properties using AppleScript
+            sleep 2
+            osascript <<EOF
+tell application "Finder"
+  set the view of the front Finder window to icon view
+  set properties of the front Finder window to {bounds:{100, 100, 620, 540}, toolbar visible:false, statusbar visible:false, sidebar width:0}
+  set icon size of the front Finder window to 64
+  set arrangement of the front Finder window to not arranged
+end tell
+EOF
+            
+            # Position icons nicely
+            sleep 1
+            osascript <<EOF
+tell application "Finder"
+  set theFolder to POSIX file "$mount_dir" as alias
+  tell window 1
+    set bounds to {100, 100, 620, 540}
+    set position of item "yupic.app" to {110, 150}
+    set position of item "Applications" to {370, 150}
+  end tell
+end tell
+EOF
+            
+            sleep 1
+            hdiutil detach "$mount_dir" -quiet
+            rm -rf "$mount_dir"
+            
+            # Compress the DMG
+            hdiutil convert "$temp_dmg" -format UDZO -o "$out_dmg"
+            rm -f "$temp_dmg"
             rm -rf "$staging_dir"
             echo "DMG creation complete."
           else
