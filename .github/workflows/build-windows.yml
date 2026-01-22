@@ -28,7 +28,7 @@ jobs:
     runs-on: windows-latest
     env:
       VCPKG_ROOT: C:\\vcpkg
-      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg-triplet }}-static-md
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg-triplet }}-static
     steps:
       - uses: actions/checkout@v4
 
@@ -52,7 +52,7 @@ jobs:
 
           $env:VCPKG_ROOT = 'C:\vcpkg'
           $triplet = '${{ matrix.vcpkg-triplet }}'
-          $static = "$triplet-static-md"
+          $static = "$triplet-static"
 
           Write-Host "Installing libheif for $static"
           C:\vcpkg\vcpkg install libheif --triplet $static

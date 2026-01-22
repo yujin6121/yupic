@@ -166,7 +166,7 @@ jobs:
 
     runs-on: windows-latest
     env:
-      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}-static-md
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}-static
     steps:
       - uses: actions/checkout@v4
 
@@ -192,10 +192,10 @@ jobs:
           echo "VCPKG_ROOT=$vcpkgRoot" >> $env:GITHUB_ENV
 
           $triplet = '${{ matrix.vcpkg_triplet }}'
-          $static = "$triplet-static-md"
+          $static = "$triplet-static"
 
           Write-Host "Installing libheif for $static"
-          .\vcpkg\vcpkg install libheif --triplet $static
+          C:\vcpkg\vcpkg install libheif --triplet $static
           .\vcpkg\vcpkg integrate install
 
       - name: Install frontend dependencies
