@@ -195,7 +195,7 @@ jobs:
           $static = "$triplet-static"
 
           Write-Host "Installing libheif for $static"
-          C:\vcpkg\vcpkg install libheif --triplet $static
+          .\vcpkg\vcpkg install libheif --triplet $static
           .\vcpkg\vcpkg integrate install
 
       - name: Install frontend dependencies
