@@ -235,6 +235,151 @@ function App() {
     html_url?: string;
   } | null>(null);
 
+  const releaseImage = useCallback((img?: ImageResponse | null) => {
+    if (!img) return;
+    try {
+      img.frames.forEach((f) => f.bitmap?.close?.());
+    } catch (e) {
+      console.warn("releaseImage failed", e);
+    }
+  }, []);
+
+  const loadOptimizedImage = useCallback(async (path: string): Promise<ImageResponse> => {
+    const ext = path.split(".").pop()?.toLowerCase() || "";
+    const computedMax = settings.maxResolution > 0
+      ? settings.maxResolution
+      : Math.max(viewport.width, viewport.height, 0);
+    const safeMax = computedMax > 0 ? computedMax : settings.defaultResolution; // use setting when viewport not ready
+    const maxSizeArg = safeMax > 0 ? safeMax : null;
+
+    if (WEB_FORMATS.has(ext)) {
+      try {
+        const url = convertFileSrc(path);
+        return await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = async () => {
+            try {
+              const natW = img.naturalWidth || img.width;
+              const natH = img.naturalHeight || img.height;
+              const { width: targetW, height: targetH } = scaleToLimit(natW, natH, safeMax);
+              const bitmap = targetW !== natW || targetH !== natH
+                ? await createImageBitmap(img, { resizeWidth: targetW, resizeHeight: targetH, resizeQuality: "high" })
+                : await createImageBitmap(img);
+
+              resolve({
+                path,
+                format: ext,
+                frames: [{
+                  width: bitmap.width,
+                  height: bitmap.height,
+                  delay_ms: 0,
+                  data: "",
+                  bitmap: bitmap
+                }]
+              });
+            } catch (e) {
+              reject(e);
+            }
+          };
+          img.onerror = () => reject(new Error("Failed to load image via URL"));
+          img.src = url;
+        });
+      } catch (e) {
+        console.warn("Optimized load failed, falling back to slow load", e);
+        return await invoke<ImageResponse>("open_image", { 
+          path,
+          maxSize: maxSizeArg
+        });
+      }
+    } else {
+      return await invoke<ImageResponse>("open_image", { 
+        path,
+        maxSize: maxSizeArg
+      });
+    }
+  }, [settings.maxResolution, viewport]);
+
+  const preloadImage = useCallback(async (path: string) => {
+    if (imageCache.current.has(path)) return;
+    try {
+      const res = await loadOptimizedImage(path);
+      // Aggressively limit cache size for low-end hardware
+      if (imageCache.current.size > 2) {
+        const firstKey = imageCache.current.keys().next().value;
+        if (firstKey) {
+          const cached = imageCache.current.get(firstKey);
+          // Clean up bitmap resources
+          if (cached?.frames) {
+            cached.frames.forEach(f => f.bitmap?.close());
+          }
+          imageCache.current.delete(firstKey);
+        }
+      }
+      imageCache.current.set(path, res);
+    } catch (e) {
+      console.error("Preload failed", e);
+    }
+  }, [loadOptimizedImage]);
+
+  const loadImage = useCallback(async (path: string) => {
+    if (!path) return;
+    setStatus(t.decoding);
+    setMetadata([]);
+    setMetadataStatus(t.metadataLoading);
+    setCanvasLoaded(false);
+    try {
+      let payload: ImageResponse;
+      if (imageCache.current.has(path)) {
+        payload = imageCache.current.get(path)!;
+      } else {
+        payload = await loadOptimizedImage(path);
+        imageCache.current.set(path, payload);
+      }
+
+      if (!payload || !payload.frames || payload.frames.length === 0) {
+        throw new Error(settings.language === "ko" ? "이미지 프레임이 없습니다" : "No image frames");
+      }
+      setImage(payload);
+      setFrameIndex(0);
+      setFitPending(true);
+      setStatus("");
+      
+      // Reset rotation/flip on new image
+      setView(v => ({ ...v, rotation: 0, flipX: false, flipY: false }));
+
+      // Load directory images for navigation
+      try {
+        const dirResult = await invoke<{ images: string[] }>("get_directory_images", { path });
+        setImageList(dirResult.images);
+        
+        // Robust index finding (case-insensitive fallback)
+        let idx = dirResult.images.indexOf(path);
+        if (idx === -1) {
+          idx = dirResult.images.findIndex(p => p.toLowerCase() === path.toLowerCase());
+        }
+        setCurrentIndex(idx);
+      } catch (err) {
+        console.warn("Failed to load directory images", err);
+      }
+
+      // Fetch metadata asynchronously
+      invoke<{ path: string; entries: MetaEntry[] }>("get_metadata", { path })
+        .then((meta) => {
+          setMetadata(meta.entries || []);
+          setMetadataStatus(meta.entries && meta.entries.length > 0 ? "" : "No metadata");
+        })
+        .catch((err) => {
+          console.warn("metadata load failed", err);
+          setMetadataStatus("Metadata load failed");
+        });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to open image";
+      console.error("open_image failed", { path, error });
+      setStatus(message);
+      setMetadataStatus("Metadata load failed");
+    }
+  }, [settings.language, t.decoding, t.metadataLoading, loadOptimizedImage]);
+
   useEffect(() => {
     getVersion()
       .then(v => setAppVersionStr(v))
@@ -370,14 +515,6 @@ function App() {
   const pinchStart = useRef<{ distance: number; center: { x: number; y: number }; view: ViewState } | null>(null);
   const renderPending = useRef(false);
 
-  const releaseImage = useCallback((img?: ImageResponse | null) => {
-    if (!img) return;
-    try {
-      img.frames.forEach((f) => f.bitmap?.close?.());
-    } catch (e) {
-      console.warn("releaseImage failed", e);
-    }
-  }, []);
 
   useEffect(() => {
     localStorage.setItem("spectra-settings", JSON.stringify(settings));
@@ -538,82 +675,6 @@ function App() {
     };
   }, [frameIndex, image]);
 
-  const loadOptimizedImage = useCallback(async (path: string): Promise<ImageResponse> => {
-    const ext = path.split(".").pop()?.toLowerCase() || "";
-    const computedMax = settings.maxResolution > 0
-      ? settings.maxResolution
-      : Math.max(viewport.width, viewport.height, 0);
-    const safeMax = computedMax > 0 ? computedMax : settings.defaultResolution; // use setting when viewport not ready
-    const maxSizeArg = safeMax > 0 ? safeMax : null;
-
-    if (WEB_FORMATS.has(ext)) {
-      try {
-        const url = convertFileSrc(path);
-        return await new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = async () => {
-            try {
-              const natW = img.naturalWidth || img.width;
-              const natH = img.naturalHeight || img.height;
-              const { width: targetW, height: targetH } = scaleToLimit(natW, natH, safeMax);
-              const bitmap = targetW !== natW || targetH !== natH
-                ? await createImageBitmap(img, { resizeWidth: targetW, resizeHeight: targetH, resizeQuality: "high" })
-                : await createImageBitmap(img);
-
-              resolve({
-                path,
-                format: ext,
-                frames: [{
-                  width: bitmap.width,
-                  height: bitmap.height,
-                  delay_ms: 0,
-                  data: "",
-                  bitmap: bitmap
-                }]
-              });
-            } catch (e) {
-              reject(e);
-            }
-          };
-          img.onerror = () => reject(new Error("Failed to load image via URL"));
-          img.src = url;
-        });
-      } catch (e) {
-        console.warn("Optimized load failed, falling back to slow load", e);
-        return await invoke<ImageResponse>("open_image", { 
-          path,
-          maxSize: maxSizeArg
-        });
-      }
-    } else {
-      return await invoke<ImageResponse>("open_image", { 
-        path,
-        maxSize: maxSizeArg
-      });
-    }
-  }, [settings.maxResolution, viewport]);
-
-  const preloadImage = useCallback(async (path: string) => {
-    if (imageCache.current.has(path)) return;
-    try {
-      const res = await loadOptimizedImage(path);
-      // Aggressively limit cache size for low-end hardware
-      if (imageCache.current.size > 2) {
-        const firstKey = imageCache.current.keys().next().value;
-        if (firstKey) {
-          const cached = imageCache.current.get(firstKey);
-          // Clean up bitmap resources
-          if (cached?.frames) {
-            cached.frames.forEach(f => f.bitmap?.close());
-          }
-          imageCache.current.delete(firstKey);
-        }
-      }
-      imageCache.current.set(path, res);
-    } catch (e) {
-      console.error("Preload failed", e);
-    }
-  }, [loadOptimizedImage]);
 
   useEffect(() => {
     if (currentIndex >= 0 && imageList.length > 0) {
@@ -624,64 +685,6 @@ function App() {
     }
   }, [currentIndex, imageList, preloadImage]);
 
-  const loadImage = useCallback(async (path: string) => {
-    if (!path) return;
-    setStatus(t.decoding);
-    setMetadata([]);
-    setMetadataStatus(t.metadataLoading);
-    setCanvasLoaded(false);
-    try {
-      let payload: ImageResponse;
-      if (imageCache.current.has(path)) {
-        payload = imageCache.current.get(path)!;
-      } else {
-        payload = await loadOptimizedImage(path);
-        imageCache.current.set(path, payload);
-      }
-
-      if (!payload || !payload.frames || payload.frames.length === 0) {
-        throw new Error(settings.language === "ko" ? "이미지 프레임이 없습니다" : "No image frames");
-      }
-      setImage(payload);
-      setFrameIndex(0);
-      setFitPending(true);
-      setStatus("");
-      
-      // Reset rotation/flip on new image
-      setView(v => ({ ...v, rotation: 0, flipX: false, flipY: false }));
-
-      // Load directory images for navigation
-      try {
-        const dirResult = await invoke<{ images: string[] }>("get_directory_images", { path });
-        setImageList(dirResult.images);
-        
-        // Robust index finding (case-insensitive fallback)
-        let idx = dirResult.images.indexOf(path);
-        if (idx === -1) {
-          idx = dirResult.images.findIndex(p => p.toLowerCase() === path.toLowerCase());
-        }
-        setCurrentIndex(idx);
-      } catch (err) {
-        console.warn("Failed to load directory images", err);
-      }
-
-      // Fetch metadata asynchronously
-      invoke<{ path: string; entries: MetaEntry[] }>("get_metadata", { path })
-        .then((meta) => {
-          setMetadata(meta.entries || []);
-          setMetadataStatus(meta.entries && meta.entries.length > 0 ? "" : "No metadata");
-        })
-        .catch((err) => {
-          console.warn("metadata load failed", err);
-          setMetadataStatus("Metadata load failed");
-        });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to open image";
-      console.error("open_image failed", { path, error });
-      setStatus(message);
-      setMetadataStatus("Metadata load failed");
-    }
-  }, [settings.language, t.decoding, t.metadataLoading, loadOptimizedImage]);
 
   useEffect(() => {
     const prev = prevMaxResRef.current;
