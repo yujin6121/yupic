@@ -567,7 +567,9 @@ function App() {
     canvas.height = vh * dpr;
     context.scale(dpr, dpr);
 
-    context.fillStyle = "#0f172a";
+    // Get theme background from CSS variable
+    const themeBg = getComputedStyle(document.documentElement).getPropertyValue('--bg-main').trim() || "#060b15";
+    context.fillStyle = themeBg;
     context.fillRect(0, 0, vw, vh);
 
     context.save();

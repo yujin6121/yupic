@@ -135,8 +135,6 @@ button:disabled {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: #000;
-  /* True black background for images */
 }
 
 .stage {
@@ -158,21 +156,16 @@ button:disabled {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: rgba(15, 23, 42, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  z-index: 20;
+  gap: 4px;
+  padding: 6px;
+  background: var(--bg-sidebar);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px var(--shadow);
+  z-index: 200;
   animation: slideUp 0.3s ease-out;
-  transition: opacity 0.3s ease;
-}
-
-.floating-controls:hover {
-  background: rgba(15, 23, 42, 0.9);
 }
 
 @keyframes slideUp {
@@ -193,22 +186,32 @@ button:disabled {
 }
 
 .floating-controls button {
-  padding: 6px;
-  width: 32px;
-  height: 32px;
+  padding: 0 10px;
+  min-width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
   background: transparent;
   border: none;
+  color: var(--text-main);
+  white-space: nowrap;
+  /* Prevent vertical wrapping */
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .floating-controls button:hover {
-  background: rgba(255, 255, 255, 0.1);
-  transform: none;
-  box-shadow: none;
+  background: var(--bg-input);
+}
+
+.floating-controls .divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 6px;
 }
 
 .stage canvas {
@@ -376,11 +379,14 @@ button:disabled {
 }
 
 .panel-title {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-main);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-size: 0.9rem;
+  letter-spacing: 1px;
+  font-size: 13px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  /* Prevent vertical wrapping */
 }
 
 dl {
