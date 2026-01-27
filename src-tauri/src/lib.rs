@@ -47,6 +47,11 @@ struct MetadataResponse {
 }
 
 #[tauri::command]
+fn get_cli_args() -> Vec<String> {
+    std::env::args().collect()
+}
+
+#[tauri::command]
 fn get_directory_images(path: &str) -> Result<DirectoryImages, String> {
     let path_buf = PathBuf::from(path);
     let dir = path_buf.parent().ok_or("no parent directory")?;
@@ -512,7 +517,22 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-    .invoke_handler(tauri::generate_handler![open_image, get_directory_images, get_metadata])
+        .invoke_handler(tauri::generate_handler![
+            open_image,
+            get_directory_images,
+            get_metadata,
+            get_cli_args
+        ])
+        .setup(|app| {
+            use tauri::Manager;
+            let app_handle = app.handle().clone();
+            
+            // Handle second instance (single-instance plugin is not used here, 
+            // but we can listen to the event if we decide to add it later.
+            // For now, let's just make sure the initial window handles the arg.)
+            
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

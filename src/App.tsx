@@ -239,7 +239,30 @@ function App() {
     getVersion()
       .then(v => setAppVersionStr(v))
       .catch(() => setAppVersionStr("?"));
-  }, []);
+
+    // Handle initial CLI arguments
+    invoke<string[]>("get_cli_args").then((args) => {
+      // args[0] is usually the executable path, args[1] should be the file path
+      if (args && args.length > 1) {
+        const filePath = args[1];
+        if (filePath && !filePath.startsWith("-")) {
+          console.log("Loading image from CLI arg:", filePath);
+          loadImage(filePath);
+        }
+      }
+    });
+
+    // Optional: listen for open-file events if we add single-instance support later
+    const unlistenPromise = getCurrentWindow().listen<string>("open-file", (event) => {
+      if (event.payload) {
+        loadImage(event.payload);
+      }
+    });
+
+    return () => {
+      unlistenPromise.then(unlisten => unlisten());
+    };
+  }, [loadImage]);
 
   function compareVersions(a: string, b: string) {
     const na = (a || '').toString().replace(/^v/, "");
