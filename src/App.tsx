@@ -153,7 +153,7 @@ function parseGpsCoord(coord: string, ref: string): number | null {
   // Parse EXIF GPS format like "37 deg 30' 15.5\"" or "37/1, 30/1, 1555/100"
   try {
     let degrees = 0, minutes = 0, seconds = 0;
-    
+
     // Try parsing "deg ' \"" format
     const dmsMatch = coord.match(/([\d.]+)\s*(?:deg|°)?\s*([\d.]+)?\s*['′]?\s*([\d.]+)?\s*["\u2033]?/);
     if (dmsMatch) {
@@ -170,7 +170,7 @@ function parseGpsCoord(coord: string, ref: string): number | null {
       if (parts.length >= 2) minutes = parts[1];
       if (parts.length >= 3) seconds = parts[2];
     }
-    
+
     let decimal = degrees + minutes / 60 + seconds / 3600;
     if (ref === 'S' || ref === 'W') decimal = -decimal;
     return decimal;
@@ -196,12 +196,12 @@ function App() {
   const [frameIndex, setFrameIndex] = useState(0);
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = localStorage.getItem("spectra-settings");
-    const defaults: Settings = { 
-      maxResolution: 0, 
+    const defaults: Settings = {
+      maxResolution: 0,
       defaultResolution: 1440,
-      language: "ko", 
-      theme: "dark", 
-      showInfoByDefault: true 
+      language: "ko",
+      theme: "dark",
+      showInfoByDefault: true
     };
     return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
   });
@@ -286,13 +286,13 @@ function App() {
         });
       } catch (e) {
         console.warn("Optimized load failed, falling back to slow load", e);
-        return await invoke<ImageResponse>("open_image", { 
+        return await invoke<ImageResponse>("open_image", {
           path,
           maxSize: maxSizeArg
         });
       }
     } else {
-      return await invoke<ImageResponse>("open_image", { 
+      return await invoke<ImageResponse>("open_image", {
         path,
         maxSize: maxSizeArg
       });
@@ -343,7 +343,7 @@ function App() {
       setFrameIndex(0);
       setFitPending(true);
       setStatus("");
-      
+
       // Reset rotation/flip on new image
       setView(v => ({ ...v, rotation: 0, flipX: false, flipY: false }));
 
@@ -351,7 +351,7 @@ function App() {
       try {
         const dirResult = await invoke<{ images: string[] }>("get_directory_images", { path });
         setImageList(dirResult.images);
-        
+
         // Robust index finding (case-insensitive fallback)
         let idx = dirResult.images.indexOf(path);
         if (idx === -1) {
@@ -485,7 +485,7 @@ function App() {
       const modName = '@tauri-apps/api/shell';
       // Prevent Vite from trying to statically analyze this import
       // @ts-ignore
-      const mod = await import(/* @vite-ignore */ (modName as any));
+      const mod = await import(/* @vite-ignore */(modName as any));
       if (mod) {
         const maybeOpen = (mod && (mod.open || mod.default?.open || mod.default)) as any;
         if (typeof maybeOpen === 'function') {
@@ -623,13 +623,13 @@ function App() {
           return;
         }
         const imageData = new ImageData(new Uint8ClampedArray(buffer), frame.width, frame.height);
-        
+
         source.width = frame.width;
         source.height = frame.height;
         const context = source.getContext("2d");
         if (!context) return;
         context.putImageData(imageData, 0, 0);
-        
+
         scheduleRender();
         setTimeout(() => setCanvasLoaded(true), 10);
       } catch (e) {
@@ -819,7 +819,7 @@ function App() {
     const latRef = get("gpslatituderef") || "N";
     const lonStr = get("gpslongitude");
     const lonRef = get("gpslongituderef") || "E";
-    
+
     let gpsLat: number | null = null;
     let gpsLon: number | null = null;
     if (latStr && lonStr) {
@@ -850,7 +850,7 @@ function App() {
       { label: "초점거리", value: metaSummary.focal },
       { label: "촬영일시", value: metaSummary.datetime },
     ].filter((row) => !!row.value);
-    
+
     return list;
   }, [metaSummary]);
 
@@ -867,7 +867,7 @@ function App() {
     if (!sourceCanvasRef.current) return;
     const { width: vw, height: vh } = viewport;
     const { width: iw, height: ih } = sourceCanvasRef.current;
-    
+
     const isRotated = view.rotation % 180 !== 0;
     const effectiveW = isRotated ? ih : iw;
     const effectiveH = isRotated ? iw : ih;
@@ -1016,11 +1016,11 @@ function App() {
     (direction: number) => {
       if (imageList.length === 0 || currentIndex < 0) return;
       let nextIndex = currentIndex + direction;
-      
+
       // Wrap around
       if (nextIndex < 0) nextIndex = imageList.length - 1;
       if (nextIndex >= imageList.length) nextIndex = 0;
-      
+
       loadImage(imageList[nextIndex]);
     },
     [imageList, currentIndex, loadImage],
@@ -1028,19 +1028,49 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Shortcuts that don't need an image loaded
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'o') {
+        event.preventDefault();
+        handlePick();
+        return;
+      }
+
       if (!image) return;
+
+      // Shortcuts that need an image
       if (event.key === "ArrowLeft") {
         event.preventDefault();
         navigateImage(-1);
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
         navigateImage(1);
+      } else if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        toggleFullscreen();
+      } else if (event.key === "Escape" && isFullscreen) {
+        event.preventDefault();
+        toggleFullscreen();
+      } else if (event.key === "0" || event.key === "=" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        handleFit();
+      } else if (event.key === "1" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        handleReset();
+      } else if (event.key === "=" || event.key === "+") {
+        event.preventDefault();
+        handleZoomIn();
+      } else if (event.key === "-") {
+        event.preventDefault();
+        handleZoomOut();
+      } else if (event.key.toLowerCase() === "i") {
+        event.preventDefault();
+        setSidebarVisible(prev => !prev);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [image, navigateImage]);
+  }, [image, navigateImage, handlePick, handleFit, handleReset, handleZoomIn, handleZoomOut, toggleFullscreen, isFullscreen]);
 
   return (
     <div className="shell" onMouseMove={(e) => {
@@ -1054,7 +1084,7 @@ function App() {
           top: 0,
           left: 0,
           right: 0,
-          zIndex: 10,
+          zIndex: 100,
           opacity: showHeader ? 1 : 0,
           pointerEvents: showHeader ? "auto" : "none",
           transition: "opacity 0.2s ease"
@@ -1082,9 +1112,9 @@ function App() {
         >
           {!image && <div className="drop-hint">{t.dropHint}</div>}
           <canvas ref={canvasRef} className={canvasLoaded ? "loaded" : ""} />
-          
+
           {image && (
-            <div 
+            <div
               className="floating-controls"
               onPointerDown={(e) => e.stopPropagation()}
               onWheel={(e) => e.stopPropagation()}
@@ -1160,9 +1190,9 @@ function App() {
               {gpsUrl && (
                 <div className="meta-row">
                   <span className="meta-tag">위치</span>
-                  <a 
-                    href={gpsUrl} 
-                    target="_blank" 
+                  <a
+                    href={gpsUrl}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="meta-val"
                     style={{ color: "#60a5fa", textDecoration: "underline", cursor: "pointer" }}
@@ -1175,14 +1205,14 @@ function App() {
           )}
           {metadata.length > 0 && (
             <>
-              <button 
-                className="meta-toggle" 
+              <button
+                className="meta-toggle"
                 onClick={() => setShowFullMeta(prev => !prev)}
-                style={{ 
-                  background: "none", 
-                  border: "none", 
-                  color: "#60a5fa", 
-                  cursor: "pointer", 
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#60a5fa",
+                  cursor: "pointer",
                   padding: "4px 0",
                   fontSize: "12px",
                   textAlign: "left",
@@ -1207,18 +1237,18 @@ function App() {
 
         <aside className={`sidebar settings-sidebar ${settingsVisible ? "" : "hidden"}`}>
           <div className="panel-title">{t.settings}</div>
-          
+
           <div className="settings-group">
             <label>{t.theme}</label>
             <div className="lang-toggle">
-              <button 
-                className={settings.theme === "dark" ? "active" : ""} 
+              <button
+                className={settings.theme === "dark" ? "active" : ""}
                 onClick={() => setSettings(s => ({ ...s, theme: "dark" }))}
               >
                 {t.dark}
               </button>
-              <button 
-                className={settings.theme === "light" ? "active" : ""} 
+              <button
+                className={settings.theme === "light" ? "active" : ""}
                 onClick={() => setSettings(s => ({ ...s, theme: "light" }))}
               >
                 {t.light}
@@ -1229,14 +1259,14 @@ function App() {
           <div className="settings-group">
             <label>{t.lang}</label>
             <div className="lang-toggle">
-              <button 
-                className={settings.language === "ko" ? "active" : ""} 
+              <button
+                className={settings.language === "ko" ? "active" : ""}
                 onClick={() => setSettings(s => ({ ...s, language: "ko" }))}
               >
                 한국어
               </button>
-              <button 
-                className={settings.language === "en" ? "active" : ""} 
+              <button
+                className={settings.language === "en" ? "active" : ""}
                 onClick={() => setSettings(s => ({ ...s, language: "en" }))}
               >
                 English
@@ -1246,8 +1276,8 @@ function App() {
 
           <div className="settings-group">
             <label>{t.maxRes}</label>
-            <select 
-              value={settings.maxResolution} 
+            <select
+              value={settings.maxResolution}
               onChange={(e) => setSettings(s => ({ ...s, maxResolution: Number(e.target.value) }))}
             >
               <option value={0}>{t.unlimited}</option>
@@ -1259,8 +1289,8 @@ function App() {
 
           <div className="settings-group">
             <label>{t.defaultRes}</label>
-            <select 
-              value={settings.defaultResolution} 
+            <select
+              value={settings.defaultResolution}
               onChange={(e) => setSettings(s => ({ ...s, defaultResolution: Number(e.target.value) }))}
             >
               <option value={720}>720p</option>
@@ -1273,14 +1303,14 @@ function App() {
           <div className="settings-group">
             <label>{t.defaultInfo}</label>
             <div className="lang-toggle">
-              <button 
-                className={settings.showInfoByDefault ? "active" : ""} 
+              <button
+                className={settings.showInfoByDefault ? "active" : ""}
                 onClick={() => setSettings(s => ({ ...s, showInfoByDefault: true }))}
               >
                 {t.on}
               </button>
-              <button 
-                className={!settings.showInfoByDefault ? "active" : ""} 
+              <button
+                className={!settings.showInfoByDefault ? "active" : ""}
                 onClick={() => setSettings(s => ({ ...s, showInfoByDefault: false }))}
               >
                 {t.off}
